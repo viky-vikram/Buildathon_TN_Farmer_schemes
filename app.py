@@ -12,7 +12,7 @@ import streamlit as st
 
 from config import load_config, validate_config
 from rag_pipeline import (
-    answer_question,
+    answer_question_stream,
     build_faiss_index,
     index_requires_rebuild,
     load_index_metadata,
@@ -516,23 +516,34 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
         max_chars=config.max_input_chars,
     )
     prompt = pending or typed_prompt
+    if not prompt:
+        return
 
-    if prompt:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.spinner("Retrieving scheme chunks and generating a grounded answer..."):
-            result = answer_question(prompt, k=k, config=config)
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": result["answer"],
-                "sources": result.get("sources", []),
-            }
-        )
-        # Bound chat history to avoid unbounded session growth.
-        max_messages = max(2, config.max_history_messages)
-        if len(st.session_state.messages) > max_messages:
-            st.session_state.messages = st.session_state.messages[-max_messages:]
-        st.rerun()
+    # Render the user's message immediately, then stream the assistant answer.
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("assistant"):
+        with st.spinner("Retrieving scheme chunks..."):
+            result = answer_question_stream(prompt, k=k, config=config)
+        stream = result.get("stream")
+        if stream is None:
+            answer_text = result.get("answer", "")
+            st.markdown(answer_text)
+        else:
+            # st.write_stream renders tokens incrementally and returns the full text.
+            answer_text = st.write_stream(stream)
+        sources = result.get("sources", [])
+        render_sources(sources)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": answer_text, "sources": sources}
+    )
+    # Bound chat history to avoid unbounded session growth.
+    max_messages = max(2, config.max_history_messages)
+    if len(st.session_state.messages) > max_messages:
+        st.session_state.messages = st.session_state.messages[-max_messages:]
 
 
 def render_sources(sources: list[dict]) -> None:
@@ -612,13 +623,12 @@ def main() -> None:
 
     index_ready = bool(schemes) and not index_requires_rebuild(schemes, config)
 
-    render_chat_messages()
-
     tabs = st.tabs(["Assistant", "Scheme Data"])
     with tabs[0]:
         if not index_ready:
             st.warning("The chat box is disabled until a valid FAISS index is available.")
         render_example_questions(index_ready)
+        render_chat_messages()
         render_chat_input(config, k, index_ready=index_ready)
     with tabs[1]:
         render_data_browser(config, schemes)

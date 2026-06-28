@@ -534,6 +534,79 @@ def test_rag_empty_retrieval_avoids_chat_model(monkeypatch: pytest.MonkeyPatch, 
     chat.assert_not_called()
 
 
+@pytest.mark.api
+def test_rag_answer_stream_yields_tokens_with_sources(monkeypatch: pytest.MonkeyPatch, isolated_config: app_config.AppConfig) -> None:
+    """Streaming returns a token generator plus sources available before generation."""
+
+    import rag_pipeline
+    from langchain_core.documents import Document
+
+    document = Document(
+        page_content="Scheme Name: Farmers Training\nBenefits: Rs.5000/- per training.",
+        metadata={"scheme_name": "Farmers Training", "source": "https://www.tn.gov.in/scheme_details.php?id=MTA0NA=="},
+    )
+
+    class FakeRetriever:
+        def invoke(self, question: str) -> list[Document]:
+            return [document, document]
+
+    class FakeVectorStore:
+        def as_retriever(self, search_type: str, search_kwargs: dict[str, Any]) -> FakeRetriever:
+            assert search_type == "mmr"
+            return FakeRetriever()
+
+    class Chunk:
+        def __init__(self, content: str):
+            self.content = content
+
+    class FakeStreamChat:
+        def __init__(self, model: str, temperature: int, **kwargs: Any):
+            assert temperature == 0
+            assert kwargs.get("max_tokens", 1) > 0
+
+        def stream(self, messages: list[Any], config: dict[str, Any]):
+            assert config["metadata"]["retriever_k"] == 4
+            assert "stream" in config["tags"]
+            for piece in ["Farmers ", "Training ", "provides support."]:
+                yield Chunk(piece)
+
+    monkeypatch.setattr(rag_pipeline, "index_requires_rebuild", lambda config=None: False)
+    monkeypatch.setattr(rag_pipeline, "load_faiss_index", lambda config=None: FakeVectorStore())
+    monkeypatch.setattr(rag_pipeline, "ChatOpenAI", FakeStreamChat)
+
+    result = rag_pipeline.answer_question_stream("What training schemes are available?", 4, isolated_config)
+    assert result["stream"] is not None
+    assert len(result["sources"]) == 1
+    assert result["sources"][0]["source_url"].startswith("https://www.tn.gov.in")
+    assert "".join(result["stream"]) == "Farmers Training provides support."
+    assert_no_secret(result["sources"])
+
+
+@pytest.mark.api
+def test_rag_answer_stream_empty_retrieval_returns_no_stream(monkeypatch: pytest.MonkeyPatch, isolated_config: app_config.AppConfig) -> None:
+    """Unsupported questions stream nothing: stream=None, unavailable text, no model call."""
+
+    import rag_pipeline
+
+    class EmptyRetriever:
+        def invoke(self, question: str) -> list[Any]:
+            return []
+
+    class EmptyVectorStore:
+        def as_retriever(self, search_type: str, search_kwargs: dict[str, Any]) -> EmptyRetriever:
+            return EmptyRetriever()
+
+    chat = MagicMock()
+    monkeypatch.setattr(rag_pipeline, "index_requires_rebuild", lambda config=None: False)
+    monkeypatch.setattr(rag_pipeline, "load_faiss_index", lambda config=None: EmptyVectorStore())
+    monkeypatch.setattr(rag_pipeline, "ChatOpenAI", chat)
+    result = rag_pipeline.answer_question_stream("Who won a cricket match?", 4, isolated_config)
+    assert result["stream"] is None
+    assert UNAVAILABLE in result["answer"]
+    assert result["sources"] == []
+    chat.assert_not_called()
+
+
 @pytest.mark.security
 @pytest.mark.api
 @pytest.mark.parametrize(

@@ -250,56 +250,16 @@ def answer_question(
     """Retrieve relevant chunks and answer a question with source metadata."""
 
     config = config or load_config()
-    errors = validate_config(config, require_openai=True)
-    if errors:
-        return {"answer": "\n".join(errors), "sources": []}
+    terminal, payload = _prepare_generation(question, k, config)
+    if terminal is not None:
+        return terminal
+    prompt, sources = payload
 
-    question = (question or "").strip()
-    if not question:
-        return {"answer": "Please enter a question about Tamil Nadu agriculture schemes.", "sources": []}
-    # Bound input length to control cost and reduce prompt-injection surface.
-    if len(question) > config.max_input_chars:
-        question = question[: config.max_input_chars]
-
-    if index_requires_rebuild(config=config):
-        return {
-            "answer": "The FAISS index is unavailable or outdated. Rebuild the FAISS index first.",
-            "sources": [],
-        }
-
-    try:
-        vector_store = load_faiss_index(config)
-        retriever = create_retriever(vector_store, k)
-        retrieved = retriever.invoke(question)
-    except Exception:  # noqa: BLE001 - never surface provider/internal detail
-        LOGGER.exception("Retrieval failed.")
-        return {
-            "answer": "The assistant could not retrieve scheme data right now. Please try again shortly.",
-            "sources": [],
-        }
-    retrieved = _dedupe_documents_by_scheme(retrieved, k)
-
-    if not retrieved:
-        return {"answer": UNAVAILABLE_MESSAGE, "sources": []}
-
-    context = format_retrieved_context(retrieved)
-    prompt = (
-        f"Context from retrieved scheme chunks:\n{context}\n\n"
-        f"User question: {question}"
-    )
     try:
         llm = create_rag_chain(config)
         response = llm.invoke(
             [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)],
-            config={
-                "run_name": "tn_schemes_rag_answer_generation",
-                "tags": ["tn-schemes", "rag", "answer"],
-                "metadata": {
-                    "chat_model": config.openai_chat_model,
-                    "embedding_model": config.openai_embedding_model,
-                    "retriever_k": k,
-                },
-            },
+            config=_run_config(config, k),
         )
     except Exception:  # noqa: BLE001 - convert provider errors to a safe message
         LOGGER.exception("Chat model call failed.")
@@ -311,17 +271,125 @@ def answer_question(
             "sources": [],
         }
 
+    return {"answer": response.content, "sources": sources}
+
+
+def answer_question_stream(
+    question: str,
+    k: int = 4,
+    config: AppConfig | None = None,
+) -> dict[str, Any]:
+    """Stream a grounded answer token by token.
+
+    Returns a dict with:
+    * ``stream``: a generator of answer text chunks, or ``None`` when no model
+      call is needed (validation error, empty input, missing index, retrieval
+      failure, or no relevant results).
+    * ``answer``: the full static answer for the ``stream is None`` cases.
+    * ``sources``: retrieved scheme sources (available before streaming starts).
+    """
+
+    config = config or load_config()
+    terminal, payload = _prepare_generation(question, k, config)
+    if terminal is not None:
+        return {"stream": None, "answer": terminal["answer"], "sources": terminal["sources"]}
+    prompt, sources = payload
+
+    def _tokens():
+        try:
+            llm = create_rag_chain(config)
+            for chunk in llm.stream(
+                [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)],
+                config=_run_config(config, k, stream=True),
+            ):
+                text = getattr(chunk, "content", "") or ""
+                if text:
+                    yield text
+        except Exception:  # noqa: BLE001 - convert provider errors to safe text
+            LOGGER.exception("Chat model streaming failed.")
+            yield (
+                "\n\nThe assistant could not finish generating the answer. "
+                "Please try again later."
+            )
+
+    return {"stream": _tokens(), "answer": "", "sources": sources}
+
+
+def _run_config(config: AppConfig, k: int, stream: bool = False) -> dict[str, Any]:
+    """Build LangSmith run config with safe (secret-free) metadata."""
+
     return {
-        "answer": response.content,
-        "sources": [
-            {
-                "scheme_name": doc.metadata.get("scheme_name", "Unknown scheme"),
-                "source_url": doc.metadata.get("source", ""),
-                "retrieved_text": doc.page_content,
-            }
-            for doc in retrieved
-        ],
+        "run_name": "tn_schemes_rag_answer_generation" + ("_stream" if stream else ""),
+        "tags": ["tn-schemes", "rag", "answer"] + (["stream"] if stream else []),
+        "metadata": {
+            "chat_model": config.openai_chat_model,
+            "embedding_model": config.openai_embedding_model,
+            "retriever_k": k,
+        },
     }
+
+
+def _prepare_generation(
+    question: str,
+    k: int,
+    config: AppConfig,
+) -> tuple[dict[str, Any] | None, tuple[str, list[dict[str, Any]]] | None]:
+    """Validate, bound input, retrieve, and build the prompt/sources.
+
+    Returns ``(terminal, None)`` when the caller should return ``terminal``
+    directly (no model call), or ``(None, (prompt, sources))`` when generation
+    should proceed. Shared by both the blocking and streaming answer paths.
+    """
+
+    errors = validate_config(config, require_openai=True)
+    if errors:
+        return {"answer": "\n".join(errors), "sources": []}, None
+
+    question = (question or "").strip()
+    if not question:
+        return {
+            "answer": "Please enter a question about Tamil Nadu agriculture schemes.",
+            "sources": [],
+        }, None
+    # Bound input length to control cost and reduce prompt-injection surface.
+    if len(question) > config.max_input_chars:
+        question = question[: config.max_input_chars]
+
+    if index_requires_rebuild(config=config):
+        return {
+            "answer": "The FAISS index is unavailable or outdated. Rebuild the FAISS index first.",
+            "sources": [],
+        }, None
+
+    try:
+        vector_store = load_faiss_index(config)
+        retriever = create_retriever(vector_store, k)
+        retrieved = retriever.invoke(question)
+    except Exception:  # noqa: BLE001 - never surface provider/internal detail
+        LOGGER.exception("Retrieval failed.")
+        return {
+            "answer": "The assistant could not retrieve scheme data right now. Please try again shortly.",
+            "sources": [],
+        }, None
+    retrieved = _dedupe_documents_by_scheme(retrieved, k)
+
+    if not retrieved:
+        return {"answer": UNAVAILABLE_MESSAGE, "sources": []}, None
+
+    context = format_retrieved_context(retrieved)
+    prompt = (
+        f"Context from retrieved scheme chunks:\n{context}\n\n"
+        f"User question: {question}"
+    )
+    sources = [
+        {
+            "scheme_name": doc.metadata.get("scheme_name", "Unknown scheme"),
+            "source_url": doc.metadata.get("source", ""),
+            "retrieved_text": doc.page_content,
+        }
+        for doc in retrieved
+    ]
+    return None, (prompt, sources)
 
 
 def _format_scheme_content(scheme: dict[str, Any]) -> str:
