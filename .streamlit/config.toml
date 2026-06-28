@@ -7,12 +7,12 @@ textColor = "#10231f"
 font = "sans serif"
 
 [client]
-# Hide the developer toolbar and never show raw tracebacks in the browser.
-toolbarMode = "viewer"
+# Keep the full Streamlit menu available, including rerun and clear-cache tools.
+toolbarMode = "developer"
 showErrorDetails = false
 
 [server]
-headless = true
+headless = false
 enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 5

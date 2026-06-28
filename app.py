@@ -245,22 +245,47 @@ def inject_styles() -> None:
         .stAlert p, .stAlert div {
             color: var(--ink) !important;
         }
-        div[data-testid="stChatInput"] {
+        div[data-testid="stForm"] {
             background: #ffffff;
             border: 1px solid var(--line);
             border-radius: 8px;
-            box-shadow: 0 10px 24px rgba(16, 35, 31, 0.08);
+            box-shadow: 0 10px 24px rgba(16, 35, 31, 0.07);
+            max-width: 1280px;
+            margin-left: auto;
+            margin-right: auto;
+            width: 100%;
+            padding: .55rem .7rem .65rem .7rem;
         }
-        div[data-testid="stChatInput"] textarea {
+        div[data-testid="stForm"] input {
+            min-height: 2.9rem;
             color: var(--ink) !important;
+            border-color: transparent !important;
+            background: #f4faf6 !important;
         }
-        div[data-testid="stChatInput"] textarea::placeholder {
+        div[data-testid="stForm"] input::placeholder {
             color: #6a7f77 !important;
             opacity: 1 !important;
         }
-        button[data-testid="stChatInputSubmitButton"] {
-            background: var(--leaf) !important;
-            color: #ffffff !important;
+        div[data-testid="stChatMessage"] {
+            width: 100%;
+            max-width: 1280px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        div[data-testid="stChatMessage"] > div {
+            max-width: 100%;
+        }
+        div[data-testid="stChatMessageContent"] {
+            width: 100%;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+        }
+        div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] {
+            max-width: 100%;
+        }
+        div[data-testid="stChatMessageContent"] p,
+        div[data-testid="stChatMessageContent"] li {
+            overflow-wrap: anywhere;
         }
         div[data-baseweb="tab-list"] button {
             color: var(--muted) !important;
@@ -510,12 +535,27 @@ def render_chat_messages() -> None:
 
 def render_chat_input(config, k: int, index_ready: bool) -> None:
     pending = st.session_state.pop("pending_question", None) if index_ready else None
-    typed_prompt = st.chat_input(
-        "Ask about eligibility, benefits, subsidies, training, documents, or application steps...",
-        disabled=not index_ready,
-        max_chars=config.max_input_chars,
-    )
-    prompt = pending or typed_prompt
+    with st.form("chat_composer", clear_on_submit=True):
+        text_column, button_column = st.columns([10, 1.15])
+        with text_column:
+            typed_prompt = st.text_input(
+                "Ask about Tamil Nadu agriculture schemes",
+                placeholder=(
+                    "Ask about eligibility, benefits, subsidies, training, documents, "
+                    "or application steps..."
+                ),
+                disabled=not index_ready,
+                max_chars=config.max_input_chars,
+                label_visibility="collapsed",
+            )
+        with button_column:
+            submitted = st.form_submit_button(
+                "Ask",
+                type="primary",
+                disabled=not index_ready,
+                use_container_width=True,
+            )
+    prompt = pending or (typed_prompt if submitted else None)
     if not prompt:
         return
 
@@ -544,6 +584,7 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
     max_messages = max(2, config.max_history_messages)
     if len(st.session_state.messages) > max_messages:
         st.session_state.messages = st.session_state.messages[-max_messages:]
+    st.rerun()
 
 
 def render_sources(sources: list[dict]) -> None:
@@ -623,15 +664,12 @@ def main() -> None:
 
     index_ready = bool(schemes) and not index_requires_rebuild(schemes, config)
 
-    tabs = st.tabs(["Assistant", "Scheme Data"])
-    with tabs[0]:
-        if not index_ready:
-            st.warning("The chat box is disabled until a valid FAISS index is available.")
-        render_example_questions(index_ready)
-        render_chat_messages()
-        render_chat_input(config, k, index_ready=index_ready)
-    with tabs[1]:
-        render_data_browser(config, schemes)
+    render_chat_messages()
+
+    if not index_ready:
+        st.warning("The chat box is disabled until a valid FAISS index is available.")
+    render_chat_input(config, k, index_ready=index_ready)
+    render_example_questions(index_ready)
 
 
 if __name__ == "__main__":

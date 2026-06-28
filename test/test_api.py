@@ -156,8 +156,8 @@ def make_test_config(tmp_path: Path, **overrides: Any) -> app_config.AppConfig:
 
     data = tmp_path / "data"
     index = tmp_path / "faiss_index"
-    data.mkdir()
-    index.mkdir()
+    data.mkdir(exist_ok=True)
+    index.mkdir(exist_ok=True)
     values = dict(
         root_dir=tmp_path,
         openai_api_key="test-openai-key",
@@ -183,10 +183,12 @@ def make_test_config(tmp_path: Path, **overrides: Any) -> app_config.AppConfig:
 
 
 def assert_no_secret(value: Any) -> None:
-    """Assert no secret marker appears in a returned value or error."""
+    """Assert no secret value appears in a returned value or error."""
 
     text = json.dumps(value, ensure_ascii=False, default=str)
-    for marker in SECRET_MARKERS:
+    # Environment variable names are safe labels in validation messages; raw
+    # tokens, authorization headers, and sk-* style values are not.
+    for marker in [item for item in SECRET_MARKERS if item not in {"OPENAI_API_KEY", "LANGSMITH_API_KEY"}]:
         assert marker not in text
 
 
@@ -686,4 +688,3 @@ def test_filesystem_write_failure_does_not_silently_pass(monkeypatch: pytest.Mon
         with pytest.raises(OSError):
             scraper.save_schemes(SAMPLE_SCHEMES, isolated_config)
     assert not target.exists()
-

@@ -412,12 +412,21 @@ def _format_scheme_content(scheme: dict[str, Any]) -> str:
 
 def _dedupe_documents_by_scheme(documents: list[Document], k: int) -> list[Document]:
     seen: set[str] = set()
+    exact_seen: set[tuple[str, str, str]] = set()
     unique: list[Document] = []
     overflow: list[Document] = []
     for document in documents:
-        key = document.metadata.get("scheme_name") or document.metadata.get("source", "")
-        if key and key not in seen:
-            seen.add(key)
+        scheme_key = document.metadata.get("scheme_name") or document.metadata.get("source", "")
+        exact_key = (
+            document.metadata.get("scheme_name", ""),
+            document.metadata.get("source", ""),
+            document.page_content,
+        )
+        if exact_key in exact_seen:
+            continue
+        exact_seen.add(exact_key)
+        if scheme_key and scheme_key not in seen:
+            seen.add(scheme_key)
             unique.append(document)
         else:
             overflow.append(document)

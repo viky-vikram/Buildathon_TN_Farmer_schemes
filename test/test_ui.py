@@ -215,7 +215,11 @@ def browser(pytestconfig: pytest.Config, playwright_instance: Playwright) -> Gen
     """Create the requested browser."""
 
     browser_option = pytestconfig.getoption("--browser", default=DEFAULT_BROWSER)
-    browser_name = (browser_option[0] if isinstance(browser_option, list) else browser_option or DEFAULT_BROWSER)
+    browser_name = (
+        browser_option[0]
+        if isinstance(browser_option, list) and browser_option
+        else browser_option or DEFAULT_BROWSER
+    )
     browser_name = str(browser_name).lower()
     headed = bool(pytestconfig.getoption("--headed", default=not HEADLESS))
     browser_type = getattr(playwright_instance, browser_name)
@@ -306,12 +310,18 @@ def wait_for_spinner_to_disappear(page: Page) -> None:
 
 
 def get_chat_input(page: Page):
-    """Return the chat input using placeholder and test-id fallbacks."""
+    """Return the inline chat input using placeholder and test-id fallbacks."""
 
     placeholder = page.get_by_placeholder(CHAT_PLACEHOLDER_PATTERN)
     if placeholder.count() > 0:
         return placeholder
-    return page.locator('[data-testid="stChatInput"] textarea')
+    return page.locator('[data-testid="stTextInput"] input')
+
+
+def get_chat_submit_button(page: Page):
+    """Return the inline chat submit button."""
+
+    return page.get_by_role("button", name="Ask")
 
 
 def submit_chat_question(page: Page, question: str) -> None:
@@ -320,7 +330,7 @@ def submit_chat_question(page: Page, question: str) -> None:
     chat_input = get_chat_input(page)
     expect(chat_input).to_be_visible(timeout=15_000)
     chat_input.fill(question)
-    chat_input.press("Enter")
+    get_chat_submit_button(page).click()
     wait_for_spinner_to_disappear(page)
     expect(page.get_by_text(question)).to_be_visible(timeout=30_000)
 
@@ -329,9 +339,10 @@ def get_latest_assistant_answer(page: Page) -> str:
     """Return visible text from the latest assistant message."""
 
     messages = page.locator('[data-testid="stChatMessage"]')
-    if messages.count() == 0:
+    message_count = messages.count()
+    if message_count == 0:
         return ""
-    return messages.last.inner_text(timeout=10_000)
+    return messages.nth(message_count - 1).inner_text(timeout=10_000)
 
 
 def get_sidebar_button(page: Page, button_name: str):
@@ -378,21 +389,12 @@ def assert_approved_https_url(url: str) -> None:
     assert parsed.scheme not in {"javascript", "file"}
 
 
-def open_scheme_data_tab(page: Page) -> None:
-    """Open Scheme Data tab."""
-
-    tab = page.get_by_role("tab", name="Scheme Data")
-    expect(tab).to_be_visible()
-    tab.click()
-    wait_for_spinner_to_disappear(page)
-
-
 def open_assistant_tab(page: Page) -> None:
-    """Open Assistant tab."""
+    """Ensure the single assistant view is visible."""
 
-    tab = page.get_by_role("tab", name="Assistant")
-    expect(tab).to_be_visible()
-    tab.click()
+    expect(page.get_by_text(APP_TITLE)).to_be_visible()
+    expect(page.get_by_text("Example questions")).to_be_visible()
+    expect(page.get_by_role("tab", name="Scheme Data")).to_have_count(0)
 
 
 def app_has_ready_index(page: Page) -> bool:
@@ -427,12 +429,14 @@ def test_application_startup_renders_without_errors(page: Page) -> None:
 @pytest.mark.regression
 @pytest.mark.ui
 def test_main_page_scheme_data_and_status_are_visible(page: Page) -> None:
-    """Scheme data tab shows table or safe empty-state messaging."""
+    """Single assistant page shows chat controls and hides the removed data tab."""
 
-    open_scheme_data_tab(page)
-    expect(page.get_by_text("Browse Scraped Schemes")).to_be_visible()
+    expect(page.get_by_role("tab", name="Scheme Data")).to_have_count(0)
+    expect(page.get_by_text("Example questions")).to_be_visible()
+    expect(get_chat_input(page)).to_be_visible()
+    expect(get_chat_submit_button(page)).to_be_visible()
     body = page.locator("body").inner_text()
-    assert "No local scheme data yet" in body or "scheme_name" in body or "Farmers" in body
+    assert "Browse Scraped Schemes" not in body
     assert "<script>" not in body.lower()
     assert_secret_not_visible(page)
 
@@ -467,7 +471,7 @@ def test_source_link_is_approved_and_not_editable(page: Page) -> None:
     expect(link).to_be_visible()
     href = link.get_attribute("href") or ""
     assert_approved_https_url(href)
-    assert page.locator('[data-testid="stSidebar"] input').count() == 0
+    assert page.locator('[data-testid="stSidebar"] input[type="text"]').count() == 0
 
 
 @pytest.mark.regression
@@ -476,10 +480,9 @@ def test_retriever_slider_changes_without_triggering_admin_actions(page: Page) -
     """Changing retriever count should not scrape or rebuild."""
 
     before = page.locator("body").inner_text()
-    slider = page.locator('[data-testid="stSlider"] input')
+    slider = page.get_by_role("slider", name="Retriever results")
     expect(slider).to_be_visible()
-    slider.fill("1")
-    slider.press("Enter")
+    slider.press("ArrowLeft")
     wait_for_spinner_to_disappear(page)
     after = page.locator("body").inner_text()
     assert "Scraping the Tamil Nadu Government schemes page" not in after
@@ -512,7 +515,9 @@ def test_chat_accepts_multiple_questions_when_index_ready(page: Page) -> None:
         submit_chat_question(page, question)
         expect(page.get_by_text(question)).to_be_visible()
     body = page.locator("body").inner_text()
-    assert "Sources" in body or "Retrieved sources" in body
+    assert ENGLISH_QUESTIONS[0] in body
+    assert TAMIL_QUESTION in body
+    assert "Traceback" not in body
     assert_secret_not_visible(page)
     assert_no_streamlit_exception(page)
 
@@ -582,23 +587,10 @@ def test_clear_chat_removes_messages_without_affecting_data(page: Page) -> None:
 @pytest.mark.download
 @pytest.mark.ui
 def test_csv_download_contains_expected_headers(page: Page) -> None:
-    """CSV download works when data exists and does not expose secrets."""
+    """CSV download is hidden from the simplified assistant UI."""
 
-    open_scheme_data_tab(page)
     button = page.get_by_role("button", name=re.compile("Download scraped CSV", re.IGNORECASE))
-    if button.count() == 0:
-        pytest.skip("No local CSV data is available for download.")
-    with page.expect_download() as download_info:
-        button.click()
-    download = download_info.value
-    path = DOWNLOAD_DIR / sanitize_filename(download.suggested_filename)
-    download.save_as(str(path))
-    content = path.read_text(encoding="utf-8-sig")
-    assert path.suffix == ".csv"
-    assert "scheme_name" in content
-    assert "scheme_detail_url" in content
-    for pattern in SECRET_PATTERNS:
-        assert pattern not in content
+    expect(button).to_have_count(0)
 
 
 @pytest.mark.ui
@@ -622,13 +614,13 @@ def test_source_expander_links_are_safe_when_present(page: Page) -> None:
 @pytest.mark.responsive
 @pytest.mark.ui
 def test_responsive_layout_has_no_primary_horizontal_overflow(responsive_page: Page) -> None:
-    """Supported viewports keep title, tabs, input/sidebar controls, and wrapping usable."""
+    """Supported viewports keep title, input/sidebar controls, and wrapping usable."""
 
     expect(responsive_page.get_by_text(APP_TITLE)).to_be_visible()
     assert_no_horizontal_overflow(responsive_page)
     body = responsive_page.locator("body").inner_text()
-    assert "Assistant" in body
-    assert "Scheme Data" in body
+    assert "Example questions" in body
+    assert "Scheme Data" not in body
     assert "Refresh Website Data" in body or responsive_page.get_by_role("button", name=re.compile("keyboard|menu", re.I)).count() > 0
 
 
