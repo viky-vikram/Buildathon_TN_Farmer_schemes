@@ -5,6 +5,8 @@ from __future__ import annotations
 from html import escape
 import logging
 from pathlib import Path
+import subprocess
+import sys
 
 import streamlit as st
 
@@ -17,6 +19,22 @@ from rag_pipeline import (
     load_scheme_data,
 )
 from scraper import scrape_all_schemes, schemes_to_dataframe
+
+
+def launch_with_streamlit() -> None:
+    """Allow `python app.py` to launch the Streamlit app in a browser."""
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(Path(__file__).resolve()),
+            "--server.headless=false",
+        ],
+        check=False,
+    )
 
 
 logging.basicConfig(
@@ -527,7 +545,6 @@ def main() -> None:
     errors = validate_config(config, require_openai=False)
 
     render_header()
-    render_status_summary(config, schemes, metadata)
 
     k = render_sidebar(config, schemes, metadata)
     render_validation_messages(errors, schemes)
@@ -547,4 +564,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if hasattr(st, "runtime") and st.runtime.exists():
+        main()
+    else:
+        launch_with_streamlit()
