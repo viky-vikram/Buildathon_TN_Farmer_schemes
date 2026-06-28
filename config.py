@@ -73,6 +73,23 @@ class AppConfig:
     request_delay_seconds: float
     data_directory: Path
     faiss_directory: Path
+    # Fields below have defaults so existing callers/tests that construct
+    # AppConfig with the original field set keep working unchanged.
+    openai_max_output_tokens: int = 700
+    openai_timeout: int = 60
+    max_input_chars: int = 1200
+    max_history_messages: int = 50
+    app_env: str = "development"
+    admin_actions_enabled: bool = False
+    admin_password: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() in {"production", "prod"}
+
+    @property
+    def admin_password_configured(self) -> bool:
+        return not _is_missing_secret(self.admin_password)
 
     @property
     def schemes_json_path(self) -> Path:
@@ -108,7 +125,7 @@ def load_config() -> AppConfig:
     config = AppConfig(
         root_dir=ROOT_DIR,
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-        openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-5.4-mini"),
+        openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
         openai_embedding_model=os.getenv(
             "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
         ),
@@ -132,6 +149,13 @@ def load_config() -> AppConfig:
         request_delay_seconds=_float_env("REQUEST_DELAY_SECONDS", 1.0),
         data_directory=data_directory,
         faiss_directory=faiss_directory,
+        openai_max_output_tokens=_int_env("OPENAI_MAX_OUTPUT_TOKENS", 700),
+        openai_timeout=_int_env("OPENAI_TIMEOUT", 60),
+        max_input_chars=_int_env("MAX_INPUT_CHARS", 1200),
+        max_history_messages=_int_env("MAX_HISTORY_MESSAGES", 50),
+        app_env=os.getenv("APP_ENV", "development"),
+        admin_actions_enabled=_bool_env("ADMIN_ACTIONS_ENABLED", True),
+        admin_password=os.getenv("ADMIN_PASSWORD", ""),
     )
 
     _apply_langsmith_environment(config)
@@ -161,6 +185,25 @@ def validate_config(config: AppConfig, require_openai: bool = False) -> list[str
 
     if config.chunk_overlap >= config.chunk_size:
         errors.append("CHUNK_OVERLAP must be smaller than CHUNK_SIZE.")
+
+    if config.chunk_size <= 0 or config.retriever_k <= 0:
+        errors.append("CHUNK_SIZE and RETRIEVER_K must be positive integers.")
+
+    if config.request_timeout <= 0 or config.request_retries <= 0:
+        errors.append("REQUEST_TIMEOUT and REQUEST_RETRIES must be positive integers.")
+
+    if config.max_input_chars <= 0 or config.openai_max_output_tokens <= 0:
+        errors.append("MAX_INPUT_CHARS and OPENAI_MAX_OUTPUT_TOKENS must be positive.")
+
+    if (
+        config.is_production
+        and config.admin_actions_enabled
+        and not config.admin_password_configured
+    ):
+        errors.append(
+            "Admin actions are enabled in production but ADMIN_PASSWORD is not set. "
+            "Set ADMIN_PASSWORD or set ADMIN_ACTIONS_ENABLED=false."
+        )
 
     return errors
 

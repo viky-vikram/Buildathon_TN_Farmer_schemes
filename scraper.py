@@ -275,6 +275,21 @@ def deduplicate_schemes(schemes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique
 
 
+def _csv_safe(value: Any) -> str:
+    """Neutralize spreadsheet (CSV) formula injection.
+
+    A value beginning with =, +, -, @, tab, or carriage return can be executed
+    as a formula by Excel/LibreOffice. Prefix such values with a single quote so
+    the cell is treated as text while staying human-readable. JSON keeps the
+    exact source value; only the CSV export is sanitized.
+    """
+
+    text = "" if value is None else str(value)
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 def save_schemes(schemes: list[dict[str, Any]], config: AppConfig) -> None:
     """Persist JSON and CSV copies without writing empty data."""
 
@@ -293,7 +308,8 @@ def save_schemes(schemes: list[dict[str, Any]], config: AppConfig) -> None:
     with csv_tmp.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SCHEME_FIELDS)
         writer.writeheader()
-        writer.writerows(schemes)
+        for scheme in schemes:
+            writer.writerow({field: _csv_safe(scheme.get(field, "")) for field in SCHEME_FIELDS})
 
     json_tmp.replace(config.schemes_json_path)
     csv_tmp.replace(config.schemes_csv_path)

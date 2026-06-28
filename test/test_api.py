@@ -492,8 +492,9 @@ def test_rag_answer_question_with_mocked_retrieval_and_chat(monkeypatch: pytest.
         content = "Farmers Training provides training support.\n\nSources\n- Farmers Training - https://www.tn.gov.in/scheme_details.php?id=MTA0NA=="
 
     class FakeChat:
-        def __init__(self, model: str, temperature: int):
+        def __init__(self, model: str, temperature: int, **kwargs: Any):
             assert temperature == 0
+            assert kwargs.get("max_tokens", 1) > 0  # output-token cap passed through
 
         def invoke(self, messages: list[Any], config: dict[str, Any]) -> FakeMessage:
             assert "retriever_k" in config["metadata"]
@@ -591,13 +592,16 @@ def test_mocked_langsmith_and_openai_are_not_called_for_health(isolated_config: 
 
 
 @pytest.mark.api
-def test_csv_formula_injection_values_are_visible_for_consumer_sanitization(isolated_config: app_config.AppConfig) -> None:
-    """Potential formula injection data is present in source records for downstream hardening checks."""
+@pytest.mark.security
+def test_csv_formula_injection_is_neutralized_on_export(isolated_config: app_config.AppConfig) -> None:
+    """CSV export neutralizes spreadsheet formula injection while preserving the source JSON."""
 
     scraper.save_schemes(SAMPLE_SCHEMES, isolated_config)
-    text = isolated_config.schemes_csv_path.read_text(encoding="utf-8-sig")
-    assert "=HYPERLINK" in text
-    assert "OPENAI_API_KEY" not in text
+    csv_text = isolated_config.schemes_csv_path.read_text(encoding="utf-8-sig")
+    json_text = isolated_config.schemes_json_path.read_text(encoding="utf-8")
+    assert "'=HYPERLINK" in csv_text  # CSV cell neutralized to text
+    assert "=HYPERLINK(" in json_text  # primary JSON keeps the exact value
+    assert "OPENAI_API_KEY" not in csv_text
 
 
 @pytest.mark.api

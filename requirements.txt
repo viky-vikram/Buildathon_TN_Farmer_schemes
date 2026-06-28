@@ -1,15 +1,18 @@
-streamlit>=1.35
-requests>=2.31
-beautifulsoup4>=4.12
-lxml>=5.0
-pandas>=2.0
-python-dotenv>=1.0
-tenacity>=8.2
-langchain>=0.2
-langchain-core>=0.2
-langchain-community>=0.2
-langchain-openai>=0.1
-langchain-text-splitters>=0.2
-langsmith>=0.1
-faiss-cpu>=1.8
-tiktoken>=0.7
+# Production dependencies. Ranges pin a compatible band (no fully open pins)
+# while still allowing patch/minor security updates.
+streamlit>=1.35,<2
+requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+lxml>=5.0,<6
+pandas>=2.0,<3
+python-dotenv>=1.0,<2
+tenacity>=8.2,<9
+langchain>=0.2,<0.4
+langchain-core>=0.2,<0.4
+langchain-community>=0.2,<0.4
+langchain-openai>=0.1,<0.3
+langchain-text-splitters>=0.2,<0.4
+langsmith>=0.1,<0.2
+faiss-cpu>=1.8,<2
+tiktoken>=0.7,<1
+pydantic>=2.5,<3

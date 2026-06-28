@@ -7,7 +7,15 @@ textColor = "#10231f"
 font = "sans serif"
 
 [client]
-toolbarMode = "developer"
+# Hide the developer toolbar and never show raw tracebacks in the browser.
+toolbarMode = "viewer"
+showErrorDetails = false
 
 [server]
-headless = false
+headless = true
+enableCORS = true
+enableXsrfProtection = true
+maxUploadSize = 5
+
+[browser]
+gatherUsageStats = false

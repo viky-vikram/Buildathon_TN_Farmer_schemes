@@ -41,6 +41,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
+LOGGER = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="Tamil Nadu Agriculture Schemes Assistant",
@@ -301,6 +302,42 @@ def get_mtime(path: Path) -> float | None:
     return path.stat().st_mtime if path.exists() else None
 
 
+def _safe_error(config, exc: Exception, fallback: str) -> str:
+    """Return a user-safe error message, hiding internals in production."""
+
+    if config.is_production:
+        return f"{fallback} Please check the server logs for details."
+    return f"{fallback} ({exc})"
+
+
+def admin_unlocked(config) -> bool:
+    """Return True when administrative actions are permitted this session.
+
+    The password is read from configuration (environment), never hard-coded.
+    When ADMIN_ACTIONS_ENABLED is false, admin actions are always blocked.
+    When enabled without a configured password (local development), actions are
+    allowed; production validation requires a password in that case.
+    """
+
+    if not config.admin_actions_enabled:
+        return False
+    if not config.admin_password_configured:
+        return True
+    if st.session_state.get("admin_ok"):
+        return True
+    entered = st.text_input(
+        "Administrator password",
+        type="password",
+        help="Required to run scraping, index rebuild, or data-replacing actions.",
+    )
+    if entered:
+        if entered == config.admin_password:
+            st.session_state.admin_ok = True
+            return True
+        st.error("Incorrect administrator password.")
+    return False
+
+
 def render_sidebar(config, schemes: list[dict], metadata: dict) -> int:
     with st.sidebar:
         chat_model = escape(config.openai_chat_model)
@@ -323,11 +360,23 @@ def render_sidebar(config, schemes: list[dict], metadata: dict) -> int:
         )
 
         st.subheader("Actions")
+        is_admin = admin_unlocked(config)
+        if not config.admin_actions_enabled:
+            st.caption("Administrative controls are disabled (ADMIN_ACTIONS_ENABLED=false).")
+        elif not is_admin:
+            st.caption("Enter the administrator password to enable data controls.")
+
         confirm_refresh = st.checkbox(
             "Confirm refresh can replace local data",
             help="Existing data is only replaced after a successful non-empty scrape.",
+            disabled=not is_admin,
         )
-        if st.button("Refresh Website Data", type="primary", use_container_width=True):
+        if st.button(
+            "Refresh Website Data",
+            type="primary",
+            use_container_width=True,
+            disabled=not is_admin,
+        ):
             if schemes and not confirm_refresh:
                 st.warning("Confirm refresh before replacing the existing local dataset.")
             else:
@@ -341,14 +390,15 @@ def render_sidebar(config, schemes: list[dict], metadata: dict) -> int:
                     st.error("Refresh failed. Existing data was preserved when available.")
                 st.rerun()
 
-        if st.button("Rebuild FAISS Index", use_container_width=True):
+        if st.button("Rebuild FAISS Index", use_container_width=True, disabled=not is_admin):
             with st.spinner("Creating embeddings and rebuilding the FAISS index..."):
                 try:
                     new_metadata = build_faiss_index(schemes, config)
                     st.success(f"Indexed {new_metadata['chunk_count']} chunks.")
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
-                    st.error(str(exc))
+                    LOGGER.exception("FAISS rebuild failed.")
+                    st.error(_safe_error(config, exc, "Index rebuild failed."))
 
         if st.button("Clear Chat", use_container_width=True):
             st.session_state.messages = []
@@ -399,6 +449,12 @@ def render_header() -> None:
             <p>
                 Ask questions grounded in scheme information scraped from the official
                 Tamil Nadu Government Agriculture - Farmers Welfare Department webpage.
+            </p>
+            <p class="compact-note" style="margin-top:.6rem">
+                This application is an independent information assistant and is not an
+                official Tamil Nadu Government service. Scheme information may change.
+                Verify eligibility, benefits, deadlines, required documents, and
+                application procedures on the official government website.
             </p>
         </div>
         """,
@@ -457,6 +513,7 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
     typed_prompt = st.chat_input(
         "Ask about eligibility, benefits, subsidies, training, documents, or application steps...",
         disabled=not index_ready,
+        max_chars=config.max_input_chars,
     )
     prompt = pending or typed_prompt
 
@@ -471,6 +528,10 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
                 "sources": result.get("sources", []),
             }
         )
+        # Bound chat history to avoid unbounded session growth.
+        max_messages = max(2, config.max_history_messages)
+        if len(st.session_state.messages) > max_messages:
+            st.session_state.messages = st.session_state.messages[-max_messages:]
         st.rerun()
 
 
