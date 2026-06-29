@@ -609,6 +609,47 @@ def test_rag_answer_stream_empty_retrieval_returns_no_stream(monkeypatch: pytest
     chat.assert_not_called()
 
 
+@pytest.mark.api
+def test_tamil_query_adds_tamil_answer_instruction(monkeypatch: pytest.MonkeyPatch, isolated_config: app_config.AppConfig) -> None:
+    """Tamil questions are passed through with an explicit Tamil answer instruction."""
+
+    import rag_pipeline
+    from langchain_core.documents import Document
+
+    document = Document(
+        page_content="Scheme Name: Farmers Training\nBenefits: Rs.5000/- per training.",
+        metadata={"scheme_name": "Farmers Training", "source": "https://www.tn.gov.in/scheme_details.php?id=MTA0NA=="},
+    )
+    captured: dict[str, str] = {}
+
+    class FakeRetriever:
+        def invoke(self, question: str) -> list[Document]:
+            return [document]
+
+    class FakeVectorStore:
+        def as_retriever(self, search_type: str, search_kwargs: dict[str, Any]) -> FakeRetriever:
+            return FakeRetriever()
+
+    class FakeMessage:
+        content = "விவசாயிகள் பயிற்சி திட்டம் உள்ளது."
+
+    class FakeChat:
+        def __init__(self, model: str, temperature: int, **kwargs: Any):
+            pass
+
+        def invoke(self, messages: list[Any], config: dict[str, Any]) -> FakeMessage:
+            captured["prompt"] = messages[-1].content
+            return FakeMessage()
+
+    monkeypatch.setattr(rag_pipeline, "index_requires_rebuild", lambda config=None: False)
+    monkeypatch.setattr(rag_pipeline, "load_faiss_index", lambda config=None: FakeVectorStore())
+    monkeypatch.setattr(rag_pipeline, "ChatOpenAI", FakeChat)
+
+    result = rag_pipeline.answer_question("விவசாயிகளுக்கான பயிற்சி திட்டங்கள் என்ன?", 4, isolated_config)
+    assert "விவசாயிகள்" in result["answer"]
+    assert "answer in clear Tamil" in captured["prompt"]
+
+
 @pytest.mark.security
 @pytest.mark.api
 @pytest.mark.parametrize(

@@ -377,8 +377,10 @@ def _prepare_generation(
         return {"answer": UNAVAILABLE_MESSAGE, "sources": []}, None
 
     context = format_retrieved_context(retrieved)
+    language_instruction = _language_instruction(question)
     prompt = (
         f"Context from retrieved scheme chunks:\n{context}\n\n"
+        f"{language_instruction}\n"
         f"User question: {question}"
     )
     sources = [
@@ -390,6 +392,20 @@ def _prepare_generation(
         for doc in retrieved
     ]
     return None, (prompt, sources)
+
+
+def _language_instruction(question: str) -> str:
+    if _contains_tamil(question):
+        return (
+            "The user asked in Tamil. Translate the user's intent internally if "
+            "needed for reasoning, but answer in clear Tamil while preserving "
+            "official scheme names and URLs exactly as provided."
+        )
+    return "The user asked in English. Answer in clear English."
+
+
+def _contains_tamil(text: str) -> bool:
+    return any("\u0b80" <= character <= "\u0bff" for character in text)
 
 
 def _format_scheme_content(scheme: dict[str, Any]) -> str:

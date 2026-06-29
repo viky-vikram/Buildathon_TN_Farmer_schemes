@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from html import escape
 import logging
 from pathlib import Path
@@ -42,6 +43,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
+ROOT_DIR = Path(__file__).resolve().parent
 
 st.set_page_config(
     page_title="Tamil Nadu Agriculture Schemes Assistant",
@@ -51,14 +53,24 @@ st.set_page_config(
 )
 
 
+def asset_data_uri(path: Path) -> str:
+    if not path.exists():
+        return ""
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/{path.suffix.lstrip('.').lower()};base64,{encoded}"
+
+
 def inject_styles() -> None:
+    hero_image = asset_data_uri(ROOT_DIR / "assets" / "agriculture-hero.png")
     st.markdown(
-        """
+        f"""
         <style>
-        :root {
+        :root {{
             --leaf: #176b45;
             --leaf-dark: #0e4f34;
+            --field: #2f8b57;
             --gold: #b7791f;
+            --sun: #f4c765;
             --ink: #10231f;
             --muted: #52665f;
             --panel: #ffffff;
@@ -66,75 +78,124 @@ def inject_styles() -> None:
             --line: #cfe0d5;
             --soft-blue: #e8f2ff;
             --soft-yellow: #fff7d6;
-        }
-        html, body, [class*="css"] {
+        }}
+        html, body, [class*="css"] {{
             color: var(--ink);
-        }
-        .stApp {
+        }}
+        .stApp {{
             background:
-                radial-gradient(circle at top left, rgba(23, 107, 69, 0.10), transparent 32rem),
+                radial-gradient(circle at top left, rgba(47, 139, 87, 0.14), transparent 32rem),
+                radial-gradient(circle at bottom right, rgba(244, 199, 101, 0.15), transparent 30rem),
                 linear-gradient(180deg, #f8fbf8 0%, #ffffff 44%, #f5faf6 100%);
             color: var(--ink);
-        }
-        .block-container {
+        }}
+        .block-container {{
             max-width: 1280px;
             padding-top: 2.3rem;
             padding-bottom: 3rem;
-        }
-        .hero {
-            border: 1px solid var(--line);
-            border-left: 7px solid var(--leaf);
-            padding: 1.45rem 1.6rem;
-            background: var(--panel);
+        }}
+        .hero {{
+            position: relative;
+            overflow: hidden;
+            min-height: 21rem;
+            display: flex;
+            align-items: flex-end;
+            border: 1px solid rgba(207, 224, 213, .85);
+            padding: 2rem;
+            background:
+                linear-gradient(90deg, rgba(6, 37, 25, .88) 0%, rgba(6, 37, 25, .72) 42%, rgba(6, 37, 25, .20) 100%),
+                url("{hero_image}") center/cover no-repeat,
+                linear-gradient(135deg, #1d6b43 0%, #e1f1df 100%);
             border-radius: 8px;
-            box-shadow: 0 18px 44px rgba(16, 35, 31, 0.08);
-            margin-bottom: 1.1rem;
-        }
-        .hero h1 {
+            box-shadow: 0 24px 55px rgba(16, 35, 31, 0.16);
+            margin-bottom: 1.15rem;
+        }}
+        .hero-content {{
+            width: min(47rem, 100%);
+        }}
+        .hero-kicker {{
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+            padding: .38rem .65rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,.16);
+            border: 1px solid rgba(255,255,255,.28);
+            color: #f8fff9;
+            font-size: .8rem;
+            font-weight: 800;
+            letter-spacing: .02rem;
+            margin-bottom: .85rem;
+        }}
+        .hero h1 {{
             margin: 0 0 .35rem 0;
-            font-size: 2rem;
-            line-height: 1.1;
-            color: var(--ink);
+            font-size: clamp(2rem, 5vw, 4.2rem);
+            line-height: 1;
+            color: #ffffff;
             letter-spacing: 0;
-        }
-        .hero p {
+            text-shadow: 0 4px 24px rgba(0,0,0,.28);
+        }}
+        .hero p {{
             margin: 0;
             font-size: 1.02rem;
-            color: var(--muted);
-            max-width: 78rem;
-        }
-        div[data-testid="stMetric"] {
+            color: rgba(255,255,255,.92);
+            max-width: 44rem;
+        }}
+        .hero-actions {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: .55rem;
+            margin-top: 1.05rem;
+        }}
+        .hero-chip {{
+            padding: .48rem .7rem;
+            border-radius: 8px;
+            background: rgba(255,255,255,.92);
+            color: var(--leaf-dark);
+            font-size: .82rem;
+            font-weight: 800;
+            box-shadow: 0 8px 22px rgba(0,0,0,.12);
+        }}
+        .assist-panel {{
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 1rem;
+            background: rgba(255,255,255,.78);
+            box-shadow: 0 12px 34px rgba(16, 35, 31, .08);
+            margin: .85rem 0 1rem 0;
+        }}
+        div[data-testid="stMetric"] {{
             background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 8px;
             padding: .9rem 1rem;
             box-shadow: 0 8px 22px rgba(16, 35, 31, 0.04);
-        }
+        }}
         div[data-testid="stMetric"] label,
         div[data-testid="stMetric"] [data-testid="stMetricLabel"],
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
             color: var(--ink) !important;
-        }
-        section[data-testid="stSidebar"] {
+        }}
+        section[data-testid="stSidebar"] {{
             background: #eef7f0;
             border-right: 1px solid var(--line);
-        }
-        section[data-testid="stSidebar"] * {
+        }}
+        section[data-testid="stSidebar"] * {{
             color: var(--ink) !important;
-        }
+        }}
         section[data-testid="stSidebar"] .stCaptionContainer,
-        section[data-testid="stSidebar"] small {
+        section[data-testid="stSidebar"] small {{
             color: var(--muted) !important;
-        }
-        .side-card {
+        }}
+        .side-card {{
             background: #ffffff;
             border: 1px solid var(--line);
             border-radius: 8px;
             padding: .7rem .8rem;
             margin: .4rem 0 .55rem 0;
             box-shadow: 0 8px 20px rgba(16, 35, 31, 0.04);
-        }
-        .side-label {
+        }}
+        .side-label {{
             display: block;
             color: var(--muted);
             font-size: .77rem;
@@ -142,62 +203,62 @@ def inject_styles() -> None:
             letter-spacing: .02rem;
             text-transform: uppercase;
             margin-bottom: .22rem;
-        }
-        .side-value {
+        }}
+        .side-value {{
             display: block;
             color: var(--ink);
             font-size: .95rem;
             font-weight: 700;
             overflow-wrap: anywhere;
-        }
-        .status-row {
+        }}
+        .status-row {{
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 1rem;
             margin: 1rem 0 1rem 0;
-        }
-        .status-card {
+        }}
+        .status-card {{
             background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 8px;
             padding: 1rem 1.05rem;
             min-height: 6rem;
             box-shadow: 0 8px 22px rgba(16, 35, 31, 0.04);
-        }
-        .status-card span {
+        }}
+        .status-card span {{
             display: block;
             color: var(--muted);
             font-size: .82rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: .02rem;
-        }
-        .status-card strong {
+        }}
+        .status-card strong {{
             display: block;
             color: var(--ink);
             font-size: clamp(1.1rem, 2vw, 1.75rem);
             line-height: 1.2;
             margin-top: .45rem;
             overflow-wrap: anywhere;
-        }
-        .sidebar-divider {
+        }}
+        .sidebar-divider {{
             height: 1px;
             background: var(--line);
             margin: .85rem 0 1rem 0;
-        }
-        .compact-note {
+        }}
+        .compact-note {{
             color: var(--muted);
             font-size: .84rem;
             line-height: 1.35;
             margin: .35rem 0 .7rem 0;
-        }
-        .example-grid {
+        }}
+        .example-grid {{
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: .65rem;
             margin: .45rem 0 1rem 0;
-        }
-        .stButton > button, .stDownloadButton > button, a[data-testid="stLinkButton"] {
+        }}
+        .stButton > button, .stDownloadButton > button, a[data-testid="stLinkButton"] {{
             border-radius: 8px;
             min-height: 2.75rem;
             font-weight: 700;
@@ -205,47 +266,47 @@ def inject_styles() -> None:
             background: #ffffff !important;
             color: var(--leaf-dark) !important;
             box-shadow: 0 4px 10px rgba(16, 35, 31, 0.05);
-        }
+        }}
         .stButton > button:hover, .stDownloadButton > button:hover,
-        a[data-testid="stLinkButton"]:hover {
+        a[data-testid="stLinkButton"]:hover {{
             border-color: var(--leaf) !important;
             color: #ffffff !important;
             background: var(--leaf) !important;
-        }
+        }}
         .stButton > button:disabled,
-        .stButton > button:disabled:hover {
+        .stButton > button:disabled:hover {{
             background: #eef4f0 !important;
             border-color: #c8dbd0 !important;
             color: #52665f !important;
             opacity: 1 !important;
             box-shadow: none !important;
-        }
+        }}
         .stButton > button:disabled *,
-        .stButton > button:disabled:hover * {
+        .stButton > button:disabled:hover * {{
             color: #52665f !important;
-        }
-        .stButton > button[kind="primary"], button[kind="primary"] {
+        }}
+        .stButton > button[kind="primary"], button[kind="primary"] {{
             background: var(--leaf) !important;
             border-color: var(--leaf) !important;
             color: #ffffff !important;
-        }
+        }}
         .stButton > button[kind="primary"] *,
-        button[kind="primary"] * {
+        button[kind="primary"] * {{
             color: #ffffff !important;
-        }
+        }}
         .stButton > button:hover *,
         .stDownloadButton > button:hover *,
-        a[data-testid="stLinkButton"]:hover * {
+        a[data-testid="stLinkButton"]:hover * {{
             color: #ffffff !important;
-        }
-        .stAlert {
+        }}
+        .stAlert {{
             border-radius: 8px;
             border: 1px solid rgba(16, 35, 31, .08);
-        }
-        .stAlert p, .stAlert div {
+        }}
+        .stAlert p, .stAlert div {{
             color: var(--ink) !important;
-        }
-        div[data-testid="stForm"] {
+        }}
+        div[data-testid="stForm"] {{
             background: #ffffff;
             border: 1px solid var(--line);
             border-radius: 8px;
@@ -255,53 +316,61 @@ def inject_styles() -> None:
             margin-right: auto;
             width: 100%;
             padding: .55rem .7rem .65rem .7rem;
-        }
-        div[data-testid="stForm"] input {
+        }}
+        div[data-testid="stForm"] input {{
             min-height: 2.9rem;
             color: var(--ink) !important;
             border-color: transparent !important;
             background: #f4faf6 !important;
-        }
-        div[data-testid="stForm"] input::placeholder {
+        }}
+        div[data-testid="stForm"] input::placeholder {{
             color: #6a7f77 !important;
             opacity: 1 !important;
-        }
-        div[data-testid="stChatMessage"] {
+        }}
+        div[data-testid="stChatMessage"] {{
             width: 100%;
             max-width: 1280px;
             margin-left: auto;
             margin-right: auto;
-        }
-        div[data-testid="stChatMessage"] > div {
+        }}
+        div[data-testid="stChatMessage"] > div {{
             max-width: 100%;
-        }
-        div[data-testid="stChatMessageContent"] {
+        }}
+        div[data-testid="stChatMessageContent"] {{
             width: 100%;
             max-width: 100%;
             overflow-wrap: anywhere;
-        }
-        div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] {
+        }}
+        div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] {{
             max-width: 100%;
-        }
+        }}
         div[data-testid="stChatMessageContent"] p,
-        div[data-testid="stChatMessageContent"] li {
+        div[data-testid="stChatMessageContent"] li {{
             overflow-wrap: anywhere;
-        }
-        div[data-baseweb="tab-list"] button {
+        }}
+        div[data-baseweb="tab-list"] button {{
             color: var(--muted) !important;
             font-weight: 700;
-        }
-        div[data-baseweb="tab-list"] button[aria-selected="true"] {
+        }}
+        div[data-baseweb="tab-list"] button[aria-selected="true"] {{
             color: var(--leaf-dark) !important;
-        }
-        @media (max-width: 900px) {
-            .status-row, .example-grid {
+        }}
+        @media (max-width: 900px) {{
+            .status-row, .example-grid {{
                 grid-template-columns: 1fr;
-            }
-            .hero h1 {
+            }}
+            .hero {{
+                min-height: 24rem;
+                padding: 1.35rem;
+                background:
+                    linear-gradient(180deg, rgba(6, 37, 25, .86) 0%, rgba(6, 37, 25, .66) 100%),
+                    url("{hero_image}") center/cover no-repeat,
+                    linear-gradient(135deg, #1d6b43 0%, #e1f1df 100%);
+            }}
+            .hero h1 {{
                 font-size: 1.55rem;
-            }
-        }
+            }}
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -470,17 +539,20 @@ def render_header() -> None:
     st.markdown(
         """
         <div class="hero">
-            <h1>Tamil Nadu Agriculture Schemes Assistant</h1>
-            <p>
-                Ask questions grounded in scheme information scraped from the official
-                Tamil Nadu Government Agriculture - Farmers Welfare Department webpage.
-            </p>
-            <p class="compact-note" style="margin-top:.6rem">
-                This application is an independent information assistant and is not an
-                official Tamil Nadu Government service. Scheme information may change.
-                Verify eligibility, benefits, deadlines, required documents, and
-                application procedures on the official government website.
-            </p>
+            <div class="hero-content">
+                <div class="hero-kicker">Grounded farmer-scheme guidance</div>
+                <h1>Tamil Nadu Agriculture Schemes Assistant</h1>
+                <p>
+                    Ask in English or Tamil and get source-grounded answers from
+                    scraped Tamil Nadu Government agriculture scheme records.
+                </p>
+                <div class="hero-actions">
+                    <span class="hero-chip">54 schemes indexed</span>
+                    <span class="hero-chip">Tamil query support</span>
+                    <span class="hero-chip">Streaming answers</span>
+                    <span class="hero-chip">Official sources</span>
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -490,9 +562,9 @@ def render_header() -> None:
 def render_example_questions(index_ready: bool) -> None:
     examples = [
         "What training schemes are available for farmers?",
+        "விவசாயிகளுக்கான பயிற்சி திட்டங்கள் என்ன?",
         "Are there any schemes related to seed production?",
         "Which schemes provide subsidies?",
-        "What are the eligibility conditions for the available schemes?",
         "How can farmers apply for these schemes?",
     ]
     st.caption("Example questions")
@@ -541,8 +613,8 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
             typed_prompt = st.text_input(
                 "Ask about Tamil Nadu agriculture schemes",
                 placeholder=(
-                    "Ask about eligibility, benefits, subsidies, training, documents, "
-                    "or application steps..."
+                    "Ask in English or Tamil about eligibility, subsidies, training, "
+                    "documents, or application steps..."
                 ),
                 disabled=not index_ready,
                 max_chars=config.max_input_chars,
@@ -565,8 +637,9 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving scheme chunks..."):
+        with st.status("Finding matching scheme records...", expanded=True) as status:
             result = answer_question_stream(prompt, k=k, config=config)
+            status.update(label="Generating a grounded answer...", state="running")
         stream = result.get("stream")
         if stream is None:
             answer_text = result.get("answer", "")
@@ -574,6 +647,7 @@ def render_chat_input(config, k: int, index_ready: bool) -> None:
         else:
             # st.write_stream renders tokens incrementally and returns the full text.
             answer_text = st.write_stream(stream)
+        status.update(label="Answer ready", state="complete", expanded=False)
         sources = result.get("sources", [])
         render_sources(sources)
 

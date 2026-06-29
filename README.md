@@ -7,15 +7,20 @@ index with OpenAI embeddings, and answers with source attribution.
 
 ![App screenshot](assets/app-home.png)
 
+![Agricultural hero background](assets/agriculture-hero.png)
+
 ## What Works
 
 - 54 scraped Tamil Nadu agriculture scheme records are included in `data/`.
 - 317 indexed chunks are included in `faiss_index/` for reviewer verification.
 - Answers are grounded in retrieved scheme chunks and include source links.
+- Agricultural-land hero image and farmer-focused visual design are included.
+- Tamil-language questions are supported with Tamil answer instructions.
+- Retrieval and generation status is shown while answers stream token-by-token.
 - The scraper detects redirects and homepage-like content from `tn.gov.in`.
 - Admin actions for scrape/rebuild are gated behind config.
 - Prompt-injection, URL-safety, CSV-injection, API, and UI tests are included.
-- Latest local validation: `55 passed, 1 skipped`.
+- Latest local validation: `56 passed, 1 skipped`.
 
 ## Architecture
 
@@ -26,7 +31,7 @@ scraper.py       Official site scraping, parsing, persistence
 rag_pipeline.py  Documents, chunking, FAISS, retrieval, answer generation
 data/            Scraped JSON and CSV scheme records
 faiss_index/     Generated FAISS index and metadata
-assets/          README screenshot
+assets/          README screenshot and agricultural hero image
 test/            Pytest API and Playwright UI suites
 ```
 
@@ -38,7 +43,8 @@ test/            Pytest API and Playwright UI suites
 4. Long records are chunked with `RecursiveCharacterTextSplitter`.
 5. OpenAI embeddings are stored in a local FAISS index.
 6. User questions retrieve relevant chunks.
-7. The chat model answers only from retrieved context and cites sources.
+7. Tamil questions receive a Tamil answer instruction before generation.
+8. The chat model streams an answer only from retrieved context and cites sources.
 
 ## Prompt Design
 
@@ -80,6 +86,8 @@ Additional rules:
 - Retrieved webpage text is treated as untrusted data.
 - Answers are restricted to retrieved scheme context.
 - Missing facts must use the fixed unavailable-information response.
+- Tamil questions are answered in Tamil while preserving official scheme names
+  and URLs exactly.
 - User input is bounded by `MAX_INPUT_CHARS`.
 - Scraping is restricted to approved `tn.gov.in` domains.
 - Homepage redirects and empty scrape results are rejected.
@@ -154,7 +162,7 @@ pytest test -q
 Current verified result:
 
 ```text
-55 passed, 1 skipped
+56 passed, 1 skipped
 ```
 
 The skipped UI test only runs when retrieved source expanders are visible in the

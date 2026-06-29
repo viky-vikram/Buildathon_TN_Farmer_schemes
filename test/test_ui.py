@@ -418,7 +418,8 @@ def test_application_startup_renders_without_errors(page: Page) -> None:
 
     expect(page).to_have_title(re.compile(APP_TITLE))
     expect(page.get_by_text(APP_TITLE)).to_be_visible()
-    expect(page.get_by_text("Ask questions grounded in scheme information")).to_be_visible()
+    expect(page.get_by_text("Ask in English or Tamil")).to_be_visible()
+    expect(page.get_by_text("Tamil query support")).to_be_visible()
     expect(page.locator('[data-testid="stSidebar"]')).to_be_visible()
     assert page.locator("body").inner_text().strip()
     assert_no_streamlit_exception(page)
