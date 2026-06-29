@@ -82,10 +82,6 @@ target/
 # Tamil Nadu Agriculture Schemes RAG
 .env
 .streamlit/secrets.toml
-faiss_index/*
-!faiss_index/.gitkeep
-data/schemes.json
-data/schemes.csv
 
 # IPython
 profile_default/
